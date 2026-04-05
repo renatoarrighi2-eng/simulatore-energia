@@ -8,7 +8,7 @@ import os
 import pickle
 
 st.set_page_config(layout="wide")
-st.title("⚡ Simulatore Energia Casa Livorno - Versione Finale")
+st.title("⚡ Simulatore Energia Casa Livorno - Versione Realistica Corretta")
 
 # -----------------------
 # INPUT UTENTE
@@ -29,6 +29,12 @@ fattore_orientamento = fattori_orientamento[orientamento]
 
 # Correzione pendenza (ottimale ~30°)
 fattore_pendenza = 1 - abs(pendenza-30)/100
+
+# Perdite di sistema (inverter, cablaggi)
+fattore_sistema = 0.9
+
+# Ombre / sporco
+fattore_ombre = 0.95
 
 CACHE_FILE = f"meteo_cache_{anno}.pkl"
 
@@ -53,8 +59,7 @@ def scarica_meteo_incrementale(anno):
     if start_date <= end_date:
         all_data = []
         current = datetime.strptime(start_date, "%Y-%m-%d")
-        end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-        while current <= end_dt:
+        while current <= datetime.strptime(end_date, "%Y-%m-%d"):
             mese = current.month
             mese_inizio = current.strftime("%Y-%m-%d")
             if mese == 12:
@@ -87,6 +92,13 @@ st.info(f"Scaricamento dati meteo incrementale {anno} fino a oggi…")
 df = scarica_meteo_incrementale(anno)
 
 # -----------------------
+# CONTROLLO DATI
+# -----------------------
+if df.empty:
+    st.error("Errore: nessun dato meteo scaricato. Controlla connessione o anno scelto.")
+    st.stop()
+
+# -----------------------
 # SIMULAZIONE ORARIA
 # -----------------------
 soc = 0.5
@@ -113,8 +125,19 @@ for idx, row in df.iterrows():
     deum = 0.1 if U>70 else 0
     c = base + cool + heat + deum
 
-    # produzione FV con correzioni tetto
-    p = rad/1000 * kwp * 0.75 * fattore_orientamento * fattore_pendenza
+    # produzione FV base
+    p = rad/1000 * kwp * 0.75
+
+    # correzione orientamento e pendenza
+    p *= fattore_orientamento * fattore_pendenza
+
+    # correzione temperatura (>25°C riduce efficienza 0.4%/°C)
+    coeff_temp = 0.004
+    fattore_temp = max(0, 1 - coeff_temp * max(T-25, 0))
+    p *= fattore_temp
+
+    # perdite sistema e ombre
+    p *= fattore_sistema * fattore_ombre
 
     # gestione batteria
     autoconsumo = min(c,p)
@@ -140,10 +163,10 @@ produzione_pomeriggio = []
 
 for idx, p in enumerate(produzione):
     ora = idx % 24
-    if 6 <= ora < 12:  # mattina
+    if 6 <= ora < 12:
         produzione_mattina.append(p)
         produzione_pomeriggio.append(0)
-    elif 12 <= ora <= 18:  # pomeriggio
+    elif 12 <= ora <= 18:
         produzione_pomeriggio.append(p)
         produzione_mattina.append(0)
     else:
@@ -197,7 +220,14 @@ df_sim = pd.DataFrame({
     "rete": rete,
     "batt": batt_soc
 })
-df_sim["time"] = pd.date_range(start=f"{anno}-01-01", periods=len(df_sim), freq="H")
+
+# controllo prima di creare time
+if len(df_sim) > 0:
+    df_sim["time"] = pd.date_range(start=df.index[0], periods=len(df_sim), freq="H")
+else:
+    st.error("Errore: df_sim vuoto, impossibile generare intervallo orario")
+    st.stop()
+
 df_sim["month"] = df_sim["time"].dt.month
 monthly = df_sim.groupby("month")[["consumo","produzione","rete"]].sum().reset_index()
 st.subheader("Riepilogo Mensile")
