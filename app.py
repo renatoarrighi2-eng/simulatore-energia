@@ -8,7 +8,7 @@ import os
 import pickle
 
 st.set_page_config(layout="wide")
-st.title("⚡ Simulatore Energia Casa Livorno - Versione Realistica Corretta")
+st.title("⚡ Simulatore Energia Casa Livorno - Versione Finale")
 
 # -----------------------
 # INPUT UTENTE
@@ -23,23 +23,16 @@ pendenza = st.slider("Pendenza del tetto (gradi)", 0, 45, 12)
 orientamento = st.selectbox("Orientamento del tetto",
                             ["Est", "Sud-Est", "Sud", "Sud-Ovest", "Ovest"])
 
-# Mappa orientamento a fattore correttivo
 fattori_orientamento = {"Est":0.9, "Sud-Est":0.95, "Sud":1.0, "Sud-Ovest":0.95, "Ovest":0.9}
 fattore_orientamento = fattori_orientamento[orientamento]
-
-# Correzione pendenza (ottimale ~30°)
 fattore_pendenza = 1 - abs(pendenza-30)/100
-
-# Perdite di sistema (inverter, cablaggi)
-fattore_sistema = 0.9
-
-# Ombre / sporco
-fattore_ombre = 0.95
+fattore_sistema = 0.9  # perdite inverter/cablaggi
+fattore_ombre = 0.95   # ombre/sporcizia
 
 CACHE_FILE = f"meteo_cache_{anno}.pkl"
 
 # -----------------------
-# FUNZIONE PER SCARICARE SOLO I NUOVI GIORNI
+# FUNZIONE PER SCARICARE DATI METEO
 # -----------------------
 @st.cache_data
 def scarica_meteo_incrementale(anno):
@@ -127,16 +120,10 @@ for idx, row in df.iterrows():
 
     # produzione FV base
     p = rad/1000 * kwp * 0.75
-
-    # correzione orientamento e pendenza
     p *= fattore_orientamento * fattore_pendenza
-
-    # correzione temperatura (>25°C riduce efficienza 0.4%/°C)
     coeff_temp = 0.004
     fattore_temp = max(0, 1 - coeff_temp * max(T-25, 0))
     p *= fattore_temp
-
-    # perdite sistema e ombre
     p *= fattore_sistema * fattore_ombre
 
     # gestione batteria
@@ -221,7 +208,6 @@ df_sim = pd.DataFrame({
     "batt": batt_soc
 })
 
-# controllo prima di creare time
 if len(df_sim) > 0:
     df_sim["time"] = pd.date_range(start=df.index[0], periods=len(df_sim), freq="H")
 else:
