@@ -208,8 +208,17 @@ df_sim = pd.DataFrame({
     "batt": batt_soc
 })
 
+# ✅ CORREZIONE ROBUSTA PER DATE
 if len(df_sim) > 0:
-    df_sim["time"] = pd.date_range(start=df.index[0], periods=len(df_sim), freq="H")
+    try:
+        if 'time' in df.columns:
+            df_sim["time"] = pd.to_datetime(df['time'].iloc[:len(df_sim)]).reset_index(drop=True)
+        else:
+            start_date = f"{anno}-01-01"
+            df_sim["time"] = pd.date_range(start=start_date, periods=len(df_sim), freq="H")
+    except Exception as e:
+        st.error(f"Errore nella generazione dell'intervallo orario: {e}")
+        st.stop()
 else:
     st.error("Errore: df_sim vuoto, impossibile generare intervallo orario")
     st.stop()
